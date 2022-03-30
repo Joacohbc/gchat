@@ -18,9 +18,14 @@ package cmd
 import (
 	"fmt"
 	"net"
-	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
+)
+
+var (
+	users        map[string]net.Conn
+	colaMensajes chan string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -30,9 +35,6 @@ var serverCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	Run: func(cmd *cobra.Command, args []string) {
 
-		//Para iniciar el servidor
-		wg := sync.WaitGroup{}
-
 		//Parseo todas las falgs
 		protocolo, err := cmd.Flags().GetString("protocol")
 		cobra.CheckErr(err)
@@ -40,7 +42,7 @@ var serverCmd = &cobra.Command{
 		port, err := cmd.Flags().GetString("port")
 		cobra.CheckErr(err)
 
-		cantidadUsers, err := cmd.Flags().GetInt("users")
+		cantidadMaxUsers, err := cmd.Flags().GetInt("users-max")
 		cobra.CheckErr(err)
 
 		//Escucho en el puerto indicado
@@ -53,77 +55,56 @@ var serverCmd = &cobra.Command{
 
 		fmt.Printf("Escuchando en el puerto %s con el protocolo %s\n", port, protocolo)
 
-		users := make([]net.Conn, 0, cantidadUsers)
+		users = make(map[string]net.Conn, 0)
+		colaMensajes = make(chan string)
 
-		//Espero a los usuarios
-		for len(users) < cantidadUsers {
-			//Espero una solicitud
-			user, err := ln.Accept()
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			fmt.Println("Se conecto:", user.RemoteAddr())
-			users = append(users, user)
-		}
-
-		fmt.Println("Empezado la asginacion de canales...")
-
-		colaMensajes := make(chan string)
-
-		//Creo una Gorutine para que cada usuario
-		wg.Add(len(users) + 1)
-
-		//Leer conexiones lo que hace es (en una gorutine),
-		//leer un canal constantemente hasta que reciba un mensaje
-		//cuando lo recibe lo envia a la colaMensajes
-		leerConexiones := func(src net.Conn, i int) {
-			defer src.Close()
-			defer wg.Done()
+		//Inicio al funcion de lectura de los mensajes
+		go func() {
+			//Y en una gorutine envio
 			for {
-				buf := make([]byte, 1024)
-
-				n, err := src.Read(buf)
-				if err != nil {
-					fmt.Println(err)
+				//Espero que llegue algo al canal
+				v, ok := <-colaMensajes
+				if !ok {
+					fmt.Println("Cerrando chat...")
 					break
 				}
 
-				if string(buf[:n]) == "exit-chat" {
-					close(colaMensajes)
-					fmt.Printf("El Usuario %v cerro el chat\n", i)
+				//Escribio en todos lo canales el mensaje
+				for _, sok := range users {
+					_, err := sok.Write([]byte(v))
+					if err != nil {
+						fmt.Println(err)
+					}
 				}
-
-				colaMensajes <- fmt.Sprintf("Usuario %v > %v", i, string(buf[:n]))
-				fmt.Printf("El Usuario %v escribio %v\n", i, string(buf[:n]))
 			}
-		}
+		}()
 
-		//Pongo a leer todas las conexiones
-		for i := range users {
-			go leerConexiones(users[i], i)
-		}
-
-		//Y en una gorutine envio
+		//Espero a los usuarios
 		for {
-			//Espero que llegue algo al canal
-			v, ok := <-colaMensajes
-			if !ok {
-				fmt.Println("Cerrando chat...")
+			//Espero una solicitud
+			s, err := ln.Accept()
+			if err != nil {
+				fmt.Println(err)
 				break
 			}
 
-			//Escribio en todos lo canales el mensaje
-			for _, sok := range users {
-				_, err := sok.Write([]byte(v))
+			if len(users)+1 <= cantidadMaxUsers {
+				//Y lo "manejo"
+				go handlerUser(s)
+			} else {
+				_, err := s.Write([]byte("El maximo de clientes es %v, intente nuevamente mas tarde (10s se cerrara la conexion)"))
 				if err != nil {
 					fmt.Println(err)
-					break
+					return
 				}
+				time.Sleep(10 * time.Second)
+				s.Close()
 			}
 		}
 
-		wg.Wait()
+		//En caso de error cierro el canal
+		close(colaMensajes)
+
 	},
 }
 
@@ -132,5 +113,76 @@ func init() {
 
 	serverCmd.Flags().StringP("port", "p", "8081", "Indica el puerto donde escuchara el servidor")
 	serverCmd.Flags().StringP("protocol", "P", "tcp", "Indica el protocolo que usara el chat (solo tcp y udp)")
-	serverCmd.Flags().IntP("users", "u", 3, "Indica la cantidad de usuarios maximos de cada chat creado")
+	serverCmd.Flags().IntP("users-max", "u", 10, "Indica la cantidad de usuarios maximos de cada chat creado")
+}
+
+//Pregunta el nombre a cada usuario y luego se pone a
+//leer el canal constantemente hasta que reciba un mensaje
+//cuando lo recibe lo envia a la cola de mensajes
+func handlerUser(user net.Conn) {
+	//Cierro la conexion al final de la funcion
+	defer user.Close()
+
+	var nombre string
+	for {
+		//Le pido al usuario que se ponga un nombre
+		_, err := user.Write([]byte("Servidor > Ingrese un nombre para el chat:\n"))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		//Leo su respuesta
+		buf := make([]byte, 1024)
+		n, err := user.Read(buf)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		//Asigno la respueta al nombre
+		nombre = string(buf[:n])
+
+		//Si el nombre no existe, osea, es un nombre valido que salga del for y continue
+		if _, existe := users[nombre]; !existe {
+			//Agrego el usuario a la lista una vez elegio un nombre
+			users[nombre] = user
+			break
+		}
+
+		//Le pido al usuario que se ponga un nombre
+		_, err = user.Write([]byte("Servidor > Ya existe un usuario con ese nombre en el chat\n"))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+
+	//Notifico que se conecto un usuario
+	fmt.Printf("Se conecto %s con el nombre de: %s\n", user.RemoteAddr().String(), nombre)
+
+	//Agrego un mensaje de bienvenida a la cola
+	colaMensajes <- fmt.Sprintf("Servidor > El usuario %v se ha unido al chat\n", nombre)
+
+	//Y incio un bucle para recibir todos los mensaje de ese usuario
+	for {
+		buf := make([]byte, 1024)
+
+		//Leo le mensaje del usuario
+		n, err := user.Read(buf)
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+
+		if string(buf[:n]) == "exit-chat" {
+			colaMensajes <- fmt.Sprintf("El Usuario %v se fue del chat\n", nombre)
+			delete(users, nombre)
+			break
+		}
+
+		//Y lo pongo en la cola de mensajes
+		colaMensajes <- fmt.Sprintf("%v > %v", nombre, string(buf[:n]))
+		fmt.Printf("El Usuario %v escribio %v\n", nombre, string(buf[:n]))
+	}
 }
