@@ -1,6 +1,6 @@
 # Gchat
 
-Un chat grupal en la CLI escrito de Go con dials (sockets), el cual funciona con la estructura de cliente-servidor se debe iniciar el servidor y luego cada uno de los clientes se va conectando y desconectado. El servidor permite a los usuarios a conectarse y desconectarse, aunque controla máximo de clientes, cada cliente se identifica con un nombre a la hora de entrar al chat
+Un chat grupal en la CLI escrito de Go con dials (sockets), el cual funciona con la estructura de cliente-servidor se debe iniciar el servidor y luego cada uno de los clientes se va conectando y desconectado en cualquier momento. Adicionalmente se controlan la cantida máxima de clientes conectadas a la vez. Cada cliente al conectarse debe identificarse con un nombre a la hora de entrar al chat. Nigun mensaje del chat es guardado ni por el servidor ni por los clientes de manera predeterminada.
 
 ## Instrucciones
 
@@ -19,6 +19,6 @@ gchat server -p 8081 -P tcp -u 5
 gchat client -p 8081 -P tcp
 ```
 
-Una vez entre el usuario debe identificarse con un nombre que no esté ya elegido. Adicionalmente en el chat se tiene comandos como "clear", que borra todo los mensajes y "exit-chat" que sala del chat.
+Una vez entre el usuario debe identificarse con un nombre que no esté ya elegido. Adicionalmente en el chat se tiene comandos como "clear", que borra todos los mensajes del chat(solo de la pantall del usuario) y "exit-chat" que permite al usuario salirse de la sala chat.
 
 Para cerrar el servidor simplemente realizar un simple Ctrl+C (^C)

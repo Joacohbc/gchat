@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -166,8 +167,15 @@ func handlerUser(user net.Conn) {
 		n, err := user.Read(buf)
 		socketErr(err, "Error al escribir el mensaje de identificacion del usuario:", err)
 
-		//Asigno la respueta al nombre
-		nombre = string(buf[:n])
+		//Asigno la respueta al nombre (Borro los espacios de incio y fin del nombre)
+		nombre = strings.TrimSpace(string(buf[:n]))
+
+		if nombre == "" || strings.ContainsAny(nombre, " ") {
+			_, err = user.Write([]byte("Servidor > El nombre no puede estar no vacio ni puede contener espacios\n"))
+			socketErr(err, "Error al leer el mensaje de identificacion del usuario:", err)
+
+			continue //para que repita el bucle hasta encontra un nombre valido
+		}
 
 		//Si el nombre existe, osea, el nombre es invalido que haga continue
 		//para volver a preguntar el nombre
