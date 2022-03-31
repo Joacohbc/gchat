@@ -18,6 +18,9 @@ package cmd
 import (
 	"os"
 
+	"gchat/src/cmd/client"
+	"gchat/src/cmd/server"
+
 	"github.com/spf13/cobra"
 )
 
@@ -44,4 +47,6 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(server.ServerCmd)
+	rootCmd.AddCommand(client.ClientCmd)
 }
