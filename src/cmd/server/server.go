@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,7 +33,7 @@ var (
 	colaMensajes chan string         = make(chan string)
 )
 
-//Evalua el error y lo imprime si no es un net.ErrClosed
+// Evalua el error y lo imprime si no es un net.ErrClosed
 func socketErr(err error, args ...interface{}) {
 	if err != nil {
 		if errors.Is(err, net.ErrClosed) {
@@ -44,7 +44,7 @@ func socketErr(err error, args ...interface{}) {
 	}
 }
 
-//Abreviacion de fmt.Sprintf()
+// Abreviacion de fmt.Sprintf()
 func str(format string, args ...interface{}) string {
 	return fmt.Sprintf(format+"\n", args...)
 }
@@ -66,12 +66,12 @@ var ServerCmd = &cobra.Command{
 		cobra.CheckErr(err)
 
 		//Escucho en el puerto indicado
-		ln, err := net.Listen(protocolo, ":"+port)
+		listener, err := net.Listen(protocolo, ":"+port)
 		if err != nil {
 			socketErr(err, "Error al inciar el servidor:", err.Error())
 			os.Exit(1)
 		}
-		defer ln.Close()
+		defer listener.Close()
 
 		log.Printf("Escuchando en el puerto %s con el protocolo %s\n", port, protocolo)
 
@@ -89,7 +89,6 @@ var ServerCmd = &cobra.Command{
 				for name, user := range users {
 					_, err := user.Write([]byte(v))
 					socketErr(err, str("Error al enviar mensaje al usuario \"%s\":%v", name, err))
-					fmt.Printf("Chat - El Usuario \"%v\" escribio \"%v\"\n", name, v)
 				}
 			}
 		}()
@@ -98,7 +97,7 @@ var ServerCmd = &cobra.Command{
 			//Espero a los usuarios
 			for {
 				//Espero una solicitud
-				s, err := ln.Accept()
+				s, err := listener.Accept()
 				socketErr(err, "Error al aceptar un cliente:", err)
 
 				if len(users)+1 <= cantidadMaxUsers {
@@ -133,7 +132,7 @@ var ServerCmd = &cobra.Command{
 		time.Sleep(5 * time.Second)
 
 		//Y apago el servidor
-		if err := ln.Close(); err != nil {
+		if err := listener.Close(); err != nil {
 			cobra.CheckErr(fmt.Errorf("no se pudo al apagar el servidor de chat correctamente: %s", err.Error()))
 		}
 		log.Println("Servidor apagado con exito")
@@ -147,18 +146,23 @@ func init() {
 	ServerCmd.Flags().IntP("users-max", "u", 10, "Indica la cantidad de usuarios maximos de cada chat creado")
 }
 
-//Pregunta el nombre a cada usuario y luego se pone a
-//leer el canal constantemente hasta que reciba un mensaje
-//cuando lo recibe lo envia a la cola de mensajes
+// Pregunta el nombre a cada usuario y luego se pone a
+// leer el canal constantemente hasta que reciba un mensaje
+// cuando lo recibe lo envia a la cola de mensajes
 func handlerUser(user net.Conn) {
+
 	//Cierro la conexion al final de la funcion
-	defer user.Close()
+	defer func() {
+		if user != nil {
+			user.Close()
+		}
+	}()
 
 	var nombre string
 
 	for {
 		//Le pido al usuario que se ponga un nombre
-		_, err := user.Write([]byte("Servidor > Ingrese un nombre para el chat:\n"))
+		_, err := user.Write([]byte("Servidor > Ingrese un nombre de usuario\n"))
 		socketErr(err, "Error al leer el mensaje de identificacion del usuario:", err)
 
 		//Leo su respuesta
@@ -210,7 +214,7 @@ func handlerUser(user net.Conn) {
 			return
 		}
 
-		if string(buf[:n]) == "exit-chat" {
+		if string(buf[:n]) == ".exit" {
 			colaMensajes <- str("El Usuario %v se fue del chat\n", nombre)
 			delete(users, nombre)
 			return

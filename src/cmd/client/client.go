@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//Funcion para cerrar de manera "segura"
+// Funcion para cerrar de manera "segura"
 func stop(app *tview.Application, con net.Conn, err error) {
 
 	//Para la ejecucion de la aplicacion
@@ -40,6 +40,7 @@ func stop(app *tview.Application, con net.Conn, err error) {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
+
 	os.Exit(0)
 }
 
@@ -60,64 +61,61 @@ var ClientCmd = &cobra.Command{
 		cobra.CheckErr(err)
 
 		//Abro el Socket
-		l, err := net.Dial(protocolo, ip.String()+":"+port)
+		socket, err := net.Dial(protocolo, ip.String()+":"+port)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		defer l.Close()
+		defer socket.Close()
 
 		//Creo la App
 		app := tview.NewApplication()
 
 		//Creo TextView
 		textView := tview.NewTextView()
-		{
-			textView.SetTitle("Go Chats")
-		}
+		textView.SetTitle("Go Chat")
+		textView.SetTitleAlign(tview.AlignCenter)
 
 		//Creo el Input
-		input := tview.NewInputField()
-		{
-			input.SetLabel("> ")
-			input.SetFieldWidth(0)
-			input.SetDoneFunc(func(key tcell.Key) {
+		input := tview.NewInputField().
+			SetLabel("> ").
+			SetFieldWidth(0)
 
-				//Cuando el a Enter
-				if key == tcell.KeyEnter {
-					//Que vacia el TextBox
-					defer input.SetText("")
+		input.SetDoneFunc(func(key tcell.Key) {
 
-					//Si ingresa clear que vacie el TextView
-					if input.GetText() == "clear" {
-						textView.Clear()
-						return
-					}
+			//Cuando el a Enter
+			if key == tcell.KeyEnter {
+				//Que vacia el TextBox
+				defer input.SetText("")
 
-					//Si ingresa exite que salga
-					if input.GetText() == "exit-chat" {
-						stop(app, l, nil)
-					}
+				//Si ingresa clear que vacie el TextView
+				if input.GetText() == ".clear" {
+					textView.Clear()
+					return
+				}
 
-					//Si ingresa algo de texto
-					if strings.TrimSpace(input.GetText()) != "" {
+				//Si ingresa exite que salga
+				if input.GetText() == ".exit" {
+					stop(app, socket, nil)
+				}
 
-						//Que lo envie por el Socket
-						_, err = l.Write([]byte(input.GetText()))
-						if err != nil {
-							stop(app, l, err)
-						}
+				//Si ingresa algo de texto
+				if strings.TrimSpace(input.GetText()) != "" {
+
+					//Que lo envie por el Socket
+					_, err = socket.Write([]byte(input.GetText()))
+					if err != nil {
+						stop(app, socket, err)
 					}
 				}
-			})
-		}
+			}
+		})
 
 		//Agrego un Flex
-		flex := tview.NewFlex().SetDirection(tview.FlexColumn)
-		{
-			flex.AddItem(textView, 0, 1, false)
-			flex.AddItem(input, 0, 1, true)
-		}
+		flex := tview.NewFlex().
+			SetDirection(tview.FlexColumn).
+			AddItem(textView, 0, 1, false).
+			AddItem(input, 0, 1, true)
 
 		//Y envio la funcion que Recibe los mensajes en segundo plano (go routine)
 		go func() {
@@ -130,9 +128,9 @@ var ClientCmd = &cobra.Command{
 			for {
 				buf := make([]byte, 1024)
 
-				n, err := l.Read(buf)
+				n, err := socket.Read(buf)
 				if err != nil {
-					stop(app, l, err)
+					stop(app, socket, err)
 				}
 
 				textView.SetText(textView.GetText(false) + string(buf[:n]))
@@ -141,7 +139,7 @@ var ClientCmd = &cobra.Command{
 		}()
 
 		if err := app.SetRoot(flex, true).SetFocus(flex).Run(); err != nil {
-			stop(app, l, err)
+			stop(app, socket, err)
 		}
 
 	},
